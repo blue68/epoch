@@ -576,6 +576,8 @@ workflows:
           requires:
             - build
 
+      - docker_system_tests: {}
+
       - static_analysis:
           requires:
             - build

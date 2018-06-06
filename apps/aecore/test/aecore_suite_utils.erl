@@ -146,7 +146,7 @@ delete_node_db_if_persisted({true, {ok, MnesiaDir}}) ->
     ok.
 
 mine_blocks(Node, NumBlocksToMine) ->
-    mine_blocks(Node, NumBlocksToMine, 10).
+    mine_blocks(Node, NumBlocksToMine, 100).
 
 mine_blocks(Node, NumBlocksToMine, MiningRate) ->
     ok = rpc:call(
@@ -160,9 +160,10 @@ mine_blocks(Node, NumBlocksToMine, MiningRate) ->
     StopRes = rpc:call(Node, aec_conductor, stop_mining, [], 5000),
     ct:log("aec_conductor:stop_mining() (~p) -> ~p", [Node, StopRes]),
     aecore_suite_utils:unsubscribe(Node, block_created),
+    aecore_suite_utils:unsubscribe(Node, micro_block_created),
     case Res of
-        {ok, _BlocksReverse} = OK ->
-            OK;
+        {ok, BlocksReverse} ->
+            {ok, lists:reverse(BlocksReverse)};
         {error, Reason} ->
             erlang:error(Reason)
     end.
@@ -175,7 +176,7 @@ mine_blocks_loop(Blocks, 0) ->
 mine_blocks_loop(Blocks, BlocksToMine) ->
     receive
         {gproc_ps_event, block_created, Info} ->
-            ct:log("block created, Info=~p", [Info]),
+            ct:log("key block created, Info=~p", [Info]),
             #{info := Block} = Info,
             mine_blocks_loop([Block | Blocks], BlocksToMine - 1);
         {gproc_ps_event, micro_block_created, Info} ->
@@ -220,7 +221,7 @@ unsubscribe(N, Event) ->
 
 all_events_since(N, TS) ->
     [{E, try events_since(N, E, TS) catch error:Err -> Err end}
-     || E <- [block_created, chain_sync, app_started]].
+     || E <- [block_created, micro_block_created, chain_sync, app_started]].
 
 events_since(N, EvType, TS) ->
     call_proxy(N, {events, EvType, TS}).
@@ -672,7 +673,7 @@ call_proxy(N, Req, Tries, Timeout) when Tries > 0 ->
 call_proxy(N, _, _, _) ->
     erlang:error({proxy_not_running, N}).
 
-events() -> [block_created, chain_sync].
+events() -> [block_created, micro_block_created, chain_sync].
 
 tell_subscribers(Subs, Event, Msg) ->
     lists:foreach(

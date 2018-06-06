@@ -92,6 +92,7 @@ start_link() ->
 
 init([]) ->
     aec_events:subscribe(block_created),
+    %%aec_events:subscribe(micro_block_created), NG: TODO
     aec_events:subscribe(top_changed),
     aec_events:subscribe(tx_created),
 

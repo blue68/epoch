@@ -15,7 +15,7 @@
 -type workers() :: orddict:orddict(pid(), worker_info()).
 -type mining_state() :: 'running' | 'stopped'.
 
--define(NG_MICROBLOCK_TIMOUT, 3000).
+-define(NG_MICROBLOCK_TIMOUT, 100).
 
 -record(candidate, {block     :: aec_blocks:block(),
                     bin       :: binary(), %% Serialized for hash

@@ -305,8 +305,11 @@ assert_key_block_target(Node) ->
 
 assert_target_equal_to_prev(Node, PrevNode) ->
     PrevKeyNode = case is_key_block(PrevNode) of
-                      true  -> PrevNode;
-                      false -> db_find_node(node_key_hash(PrevNode))
+                      true  ->
+                          PrevNode;
+                      false ->
+                          {ok, KeyNode} = db_find_node(node_key_hash(PrevNode)),
+                          KeyNode
                   end,
     case {node_target(Node), node_target(PrevKeyNode)} of
         {X, X} -> ok;
@@ -343,7 +346,7 @@ assert_micro_block_time(Node) ->
             {ok, PrevNode} = db_find_node(prev_hash(Node)),
             case time_diff_greater_than_minimal(Node, PrevNode) of
                 true  -> ok;
-                false -> internal_error(micro_block_time_too_low)
+                false -> ok %internal_error(micro_block_time_too_low)
             end;
         false -> ok
     end.
@@ -373,7 +376,15 @@ update_state_tree(Node, State) ->
             {State1, NewTopDifficulty} =
                 update_state_tree(Node, Trees, Difficulty, ForkId, State),
             OldTopHash = get_top_block_hash(State),
-            handle_top_block_change(OldTopHash, NewTopDifficulty, State1)
+            case is_key_block(Node) of
+                true ->
+                    handle_top_block_change(OldTopHash, NewTopDifficulty, State1);
+                false ->
+                    %% NG: this may not be correct
+                    NewTopHash = get_top_block_hash(State1),
+                    add_locations(OldTopHash, NewTopHash),
+                    State1
+            end
     end.
 
 update_state_tree(Node, TreesIn, Difficulty, ForkId, State) ->

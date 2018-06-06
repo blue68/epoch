@@ -466,10 +466,14 @@ maybe_publish_block({received, _},_Block) ->
     ok;
 maybe_publish_block({created, micro_block}, Block) ->
     %% This is a block we created ourselves. Always publish.
+    epoch_mining:info("NEW MICRO BLOCK: ~p", [Block]),
+    epoch_mining:info("TXS IN MEMPOOL: ~p", [aec_tx_pool:peek(infinity)]),
     aec_events:publish(micro_block_created, Block),
     update_chain_metrics(Block);
 maybe_publish_block({created, block}, Block) ->
     %% This is a block we created ourselves. Always publish.
+    epoch_mining:info("NEW KEY BLOCK: ~p", [Block]),
+    epoch_mining:info("TXS IN MEMPOOL: ~p", [aec_tx_pool:peek(infinity)]),
     aec_events:publish(block_created, Block),
     update_chain_metrics(Block).
 
@@ -870,8 +874,13 @@ handle_add_block(Block, #state{consensus = #consensus{leader_key = LeaderKey}} =
                         ok ->
                             maybe_publish_block(Origin, Block),
                             case preempt_if_new_top(State, Origin) of
-                                no_change -> {ok, State};
-                                {changed, State1} -> {ok, setup_loop(State1, aec_blocks:miner(Block), Origin)}
+                                no_change ->
+                                    {ok, State};
+                                {changed, State1} ->
+                                    case aec_blocks:is_key_block(Block) of
+                                        true -> {ok, setup_loop(State1, aec_blocks:miner(Block), Origin)};
+                                        false -> {ok, setup_loop(State1, LeaderKey, Origin)}
+                                    end
                             end;
                         {error, Reason} ->
                             lager:error("Couldn't insert block (~p)", [Reason]),
@@ -893,8 +902,8 @@ setup_loop(State, LeaderKey, {created, block}) ->
 setup_loop(State, LeaderKey, {received, block}) ->
     State1 = State#state{consensus = #consensus{leader = false, leader_key = LeaderKey}},
     start_mining(State1);
-setup_loop(State, no_key, {created, micro_block}) ->
-    State1 = State#state{consensus = #consensus{leader = true}},
+setup_loop(State, LeaderKey, {created, micro_block}) ->
+    State1 = State#state{consensus = #consensus{leader = true, leader_key = LeaderKey}},
     State2 = start_mining(State1),
     start_micro_sleep(State2);
 setup_loop(State, no_key, {received, micro_block}) ->

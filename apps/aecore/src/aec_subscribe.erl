@@ -60,6 +60,7 @@ init([]) ->
     %% TODO: Think about the startup/sync phase...
     aec_events:subscribe(top_changed),
     aec_events:subscribe(block_created),
+    aec_events:subscribe(micro_block_created),
     {ok, #state{}}.
 
 handle_call(_Msg, _From, State) ->
@@ -76,7 +77,7 @@ handle_cast(_Msg, State) ->
 
 handle_info({gproc_ps_event, Event, #{ info := Block }},
             State = #state{ subscribed = Subs })
-        when Event == top_changed; Event == block_created ->
+        when Event == top_changed; Event == block_created; Event == micro_block_created ->
     notify_chain_subscribers(Event, Block, Subs),
     notify_tx_subscribers(aec_blocks:txs(Block), Subs),
     {noreply, State}.
@@ -139,6 +140,9 @@ notify_chain_subscribers(Event, Block, #sub{ chain = Cs }) ->
         block_created ->
             [ Ws ! {event, mined_block, {BlockHeight, BlockHash}}
               || {{ws, Ws}, mined_block} <- Cs ];
+        micro_block_created ->
+            [ Ws ! {event, added_micro_block, {BlockHeight, BlockHash}}
+              || {{ws, Ws}, added_micro_block} <- Cs ];
         top_changed -> %% New block from another node
             ok
     end,

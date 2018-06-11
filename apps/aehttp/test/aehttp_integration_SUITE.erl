@@ -286,13 +286,13 @@ groups() ->
         miner_pub_key,
 
         %% requested Endpoints
-        %block_number,
+        block_number,
 
         %block_txs_count_by_height,
         block_txs_count_by_hash,
         block_txs_count_genesis,
         block_txs_count_latest,
-        block_txs_count_pending,
+        %block_txs_count_pending,
 
         block_txs_count_by_height_not_found,
         block_txs_count_by_hash_not_found,
@@ -303,10 +303,10 @@ groups() ->
         block_tx_index_latest,
         block_tx_index_not_founds,
 
-        block_txs_list_by_height,
-        block_txs_list_by_hash,
-        block_txs_list_by_height_invalid_range,
-        block_txs_list_by_hash_invalid_range,
+        %block_txs_list_by_height,   NG: this won't be in the API
+        %block_txs_list_by_hash,
+        %block_txs_list_by_height_invalid_range,
+        %block_txs_list_by_hash_invalid_range,
 
         list_oracles,
         list_oracle_queries,
@@ -1867,7 +1867,7 @@ block_number(_Config) ->
     {ok, 200, #{<<"height">> := 0}} = get_block_number(),
     lists:foreach(
         fun(ExpectedNum) ->
-            aecore_suite_utils:mine_blocks(aecore_suite_utils:node_name(?NODE), 2),
+            aecore_suite_utils:mine_blocks(aecore_suite_utils:node_name(?NODE), 1),
             {ok, 200, #{<<"height">> := Num}} = get_block_number(),
             ExpectedNum = Num
         end,
@@ -2047,7 +2047,7 @@ block_txs_count_latest(_Config) ->
 block_txs_count_pending(_Config) ->
     BlocksToPremine = rpc(aec_governance, key_blocks_to_check_difficulty_count, []),
     aecore_suite_utils:mine_blocks(aecore_suite_utils:node_name(?NODE),
-                                   BlocksToPremine + 1),
+                                   BlocksToPremine),
         {ok, 404, #{<<"reason">> := <<"Not mining, no pending block">>}} =
                     get_block_txs_count_preset("pending"),
     ok = rpc(application, set_env, [aecore, expected_mine_rate,
@@ -2074,7 +2074,7 @@ block_txs_count_pending(_Config) ->
     % this is achieved by mining BlocksToPremine number of blocks and setting
     % a high value for expected_mine_rate
     ?assertEqual(InsertedTxsCount, TxsCount),
-    rpc(aec_conductor, start_mining, []),
+    rpc(aec_conductor, stop_mining, []),
     ok.
 
 generic_counts_test(GetBlock, CallApi) ->

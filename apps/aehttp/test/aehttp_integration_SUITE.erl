@@ -253,9 +253,9 @@ groups() ->
         get_transaction,
 
         % sync gossip
-        %pending_transactions,
-        %post_correct_blocks,
-        %post_broken_blocks,
+        pending_transactions,
+        %post_correct_blocks,  NG: won't be in the API
+        %post_broken_blocks,   NG: won't be in the API
         post_correct_tx,
         post_broken_tx,
         post_broken_base58_tx,
@@ -268,14 +268,14 @@ groups() ->
         balance_negative_cases,
 
         % transactions
-        %account_transactions,
+        %account_transactions, NG: not relevant for NG? Uses block ranges
 
         % infos
         version,
         info_disabled,
         info_empty,
-        %info_more_than_30,
-        %info_less_than_30,
+        %info_more_than_30,  NG: won't be in the API
+        %info_less_than_30,  NG: won't be in the API
 
         peer_pub_key
       ]},
@@ -1363,10 +1363,13 @@ pending_transactions(_Config) ->
     AmountToSpent = 1,
     {BlocksToMine, Fee} = minimal_fee_and_blocks_to_mine(AmountToSpent, 1),
     MineReward = rpc(aec_governance, block_mine_reward, []),
-    aecore_suite_utils:mine_blocks(aecore_suite_utils:node_name(?NODE), BlocksToMine + 1),
+    aecore_suite_utils:mine_blocks(aecore_suite_utils:node_name(?NODE), BlocksToMine),
     {ok, 200, #{<<"balance">> := Bal0}} = get_balance_at_top(),
 
-    {Bal0, _, _} = {InitialBalance + BlocksToMine * MineReward, Bal0,
+    ct:log("Bal0: ~p, Initial Balance: ~p, Blocks to mine: ~p, Mine reward: ~p, Fee: ~p",
+           [Bal0, InitialBalance, BlocksToMine, MineReward, Fee]),
+    %% NG: TODO: fee goes to the miner?
+    {Bal0, _, _} = {InitialBalance + Fee + BlocksToMine * MineReward, Bal0,
                  {InitialBalance, BlocksToMine, MineReward, Fee}},
     true = (is_integer(Bal0) andalso Bal0 > AmountToSpent + Fee),
 
@@ -1399,7 +1402,10 @@ pending_transactions(_Config) ->
     {ok, 200, []} = get_transactions(),
 
     {ok, 200, #{<<"balance">> := Bal1}} = get_balance_at_top(),
-    Bal1 = Bal0 + MineReward + Fee - AmountToSpent - Fee,
+    % NG: TODO
+    ct:log("Bal1: ~p, Bal0: ~p, Mine reward: ~p, Fee: ~p, Amount to spend: ~p",
+           [Bal1, Bal0, MineReward, Fee, AmountToSpent]),
+    Bal1 = Bal0 + MineReward + Fee - AmountToSpent,
     {ok, 200, #{<<"balance">> := AmountToSpent}} =
                  get_balance_at_top(aec_base58c:encode(account_pubkey, ReceiverPubKey)),
     ok.

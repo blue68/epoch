@@ -250,7 +250,7 @@ groups() ->
         state_channels_onchain_transactions,
         unknown_atom_in_spend_tx,
 
-        %get_transaction,
+        get_transaction,
 
         % sync gossip
         %pending_transactions,

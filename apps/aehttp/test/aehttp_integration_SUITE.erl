@@ -257,7 +257,7 @@ groups() ->
         balance_negative_cases,
 
         % transactions
-        %account_transactions, NG: not relevant for NG? Uses block ranges
+        account_transactions,
 
         % infos
         version,
@@ -1657,7 +1657,8 @@ acc_txs_test(Pubkey, Offset, Limit, ShowPending) ->
     {account_pubkey, PKDecoded} = aec_base58c:decode(Pubkey),
     TxEncodings = [default, message_pack, json],
     AllTestedTxTypes = [[<<"spend_tx">>]],
-    {ok, 200, #{<<"height">> := ToHeight}} = get_block_number(),
+    {ok, 200, #{<<"hash">> := GenesisHash}} = get_internal_block_preset("genesis", default),
+    {ok, 200, #{<<"hash">> := ToHash}} = get_top(),
     ct:log("Offset: ~p, Limit: ~p, Pending: ~p", [Offset, Limit, ShowPending]),
     lists:foreach(
         fun({TxEncoding, TxTypes}) ->
@@ -1691,7 +1692,7 @@ acc_txs_test(Pubkey, Offset, Limit, ShowPending) ->
                         end,
                     #{<<"data_schema">> := ExpectedDS,
                       <<"transactions">> := AllTxs} =
-                        expected_range_result(0, ToHeight, TxEncoding, TT,
+                        expected_range_result(GenesisHash, ToHash, TxEncoding, TT,
                                               PubkeyInTx, true),
                     ParamsL0 = [tx_encoding_param(TxEncoding),
                                 make_tx_types_filter(Filter),
@@ -2117,11 +2118,12 @@ encode_pending_tx(Txs, TxEncoding0) ->
         end,
         Txs).
 
-expected_range_result(HeightFrom, HeightTo, TxEncoding0, TxTypes, Filter,
+expected_range_result(HashFrom, HashTo, TxEncoding0, TxTypes, Filter,
                       Reverse) ->
-    %% NG: maybe remove, NG API won't support ranges
-    {ok, Blocks} = rpc(aec_chain, get_block_range_by_height, [HeightFrom,
-                                                              HeightTo]),
+    {block_hash, HashFrom1} = aec_base58c:decode(HashFrom),
+    {block_hash, HashTo1} = aec_base58c:decode(HashTo),
+    {ok, Blocks} = rpc(aec_chain, get_block_range_by_hash,
+                       [HashFrom1, HashTo1]),
     TxEncoding =
         case TxEncoding0 of
             default -> message_pack;

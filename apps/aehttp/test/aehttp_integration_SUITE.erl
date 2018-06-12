@@ -2497,7 +2497,7 @@ ws_block_mined(_Config) ->
     %% Register for mined_block events
     ws_subscribe(ConnPid, #{ type => mined_block }),
 
-    {Height, Hash} = ws_mine_block(ConnPid, ?NODE),
+    {Height, Hash} = ws_mine_block(ConnPid, ?NODE, 1),
 
     {_Tag, #{<<"block">> := Block}} = ws_chain_get(ConnPid, #{height => Height, type => block}),
     {_Tag, #{<<"block">> := Block}} = ws_chain_get(ConnPid, #{hash => Hash, type => block}),
@@ -2584,7 +2584,7 @@ ws_tx_on_chain(_Config) ->
     ws_subscribe(ConnPid, #{ type => mined_block }),
 
     %% Mine a block to make sure the Pubkey has some funds!
-    ws_mine_block(ConnPid, ?NODE),
+    ws_mine_block(ConnPid, ?NODE, 1),
 
     %% Fetch the pubkey via HTTP
     {ok, 200, #{ <<"pub_key">> := PK }} = get_miner_pub_key(),
@@ -2607,7 +2607,7 @@ ws_tx_on_chain(_Config) ->
 
     %% Mine a block and check that an event is receieved corresponding to
     %% the Tx.
-    ws_mine_block(ConnPid, ?NODE),
+    ws_mine_block(ConnPid, ?NODE, 2),
     {ok, #{<<"tx_hash">> := TxHash }} = ?WS:wait_for_event(ConnPid, chain, tx_chain),
 
     ok = aehttp_ws_test_utils:stop(ConnPid),
@@ -2620,7 +2620,7 @@ ws_oracles(_Config) ->
     ws_subscribe(ConnPid, #{ type => mined_block }),
 
     %% Mine a block to make sure the Pubkey has some funds!
-    ws_mine_block(ConnPid, ?NODE),
+    ws_mine_block(ConnPid, ?NODE, 2),
 
     %% Fetch the pubkey via HTTP
     {ok, 200, #{ <<"pub_key">> := PK }} = get_miner_pub_key(),
@@ -2630,7 +2630,7 @@ ws_oracles(_Config) ->
     OId = aec_base58c:encode(oracle_pubkey, ActualPK),
 
     %% Mine a block to get the oracle onto the chain
-    ws_mine_block(ConnPid, ?NODE),
+    ws_mine_block(ConnPid, ?NODE, 1),
 
     %% Register for events when the freshly registered oracle is queried!
     ws_subscribe(ConnPid, #{ type => oracle_query, oracle_id => OId }),
@@ -2650,7 +2650,7 @@ ws_oracles(_Config) ->
 
     %% Mine a block and check that an event is receieved corresponding to
     %% the query.
-    ws_mine_block(ConnPid, ?NODE),
+    ws_mine_block(ConnPid, ?NODE, 2),
     {ok, #{<<"query_id">> := QId }} = ?WS:wait_for_event(ConnPid, chain, new_oracle_query),
 
     %% Subscribe to responses to the query.
@@ -2666,7 +2666,7 @@ ws_oracles(_Config) ->
       <<"query_id">> := QId } = ws_do_request(ConnPid, oracle, response, ResponseData),
 
     %% Mine a block and check that an event is received
-    ws_mine_block(ConnPid, ?NODE),
+    ws_mine_block(ConnPid, ?NODE, 2),
     {ok, #{<<"query_id">> := QId }} = ?WS:wait_for_event(ConnPid, chain, new_oracle_response),
 
     %% Check that we can extend the oracle TTL
@@ -2684,7 +2684,7 @@ ws_oracles(_Config) ->
     ok = ?WS:register_test_for_event(ConnPid, chain, tx_chain),
 
     %% Mine a block and check that the extend tx made it onto the chain
-    ws_mine_block(ConnPid, ?NODE),
+    ws_mine_block(ConnPid, ?NODE, 2),
     {ok, #{<<"tx_hash">> := ExtendTxHash }} = ?WS:wait_for_event(ConnPid, chain, tx_chain),
 
     ok = aehttp_ws_test_utils:stop(ConnPid),
@@ -3325,9 +3325,9 @@ ws_chain_get(ConnPid, Tag, PayLoad) ->
     ok = ?WS:unregister_test_for_event(ConnPid, chain, requested_data),
     {Tag1, Res}.
 
-ws_mine_block(ConnPid, Node) ->
+ws_mine_block(ConnPid, Node, Count) ->
     ok = ?WS:register_test_for_event(ConnPid, chain, mined_block),
-    aecore_suite_utils:mine_blocks(aecore_suite_utils:node_name(Node), 1),
+    aecore_suite_utils:mine_blocks(aecore_suite_utils:node_name(Node), Count),
     {ok, #{<<"height">> := Height, <<"hash">> := Hash}} = ?WS:wait_for_event(ConnPid, chain, mined_block),
     ok = ?WS:unregister_test_for_event(ConnPid, chain, mined_block),
     {Height, Hash}.

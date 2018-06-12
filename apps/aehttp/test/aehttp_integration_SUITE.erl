@@ -51,8 +51,6 @@
 
     % sync gossip
     pending_transactions/1,
-    post_correct_blocks/1,
-    post_broken_blocks/1,
     post_correct_tx/1,
     post_broken_tx/1,
     post_broken_base58_tx/1,
@@ -68,8 +66,6 @@
     version/1,
     info_disabled/1,
     info_empty/1,
-    info_more_than_30/1,
-    info_less_than_30/1,
 
     peer_pub_key/1
    ]).
@@ -99,11 +95,6 @@
     block_tx_index_by_hash/1,
     block_tx_index_latest/1,
     block_tx_index_not_founds/1,
-
-    block_txs_list_by_height/1,
-    block_txs_list_by_hash/1,
-    block_txs_list_by_height_invalid_range/1,
-    block_txs_list_by_hash_invalid_range/1,
 
     naming_system_manage_name/1,
     naming_system_broken_txs/1,
@@ -254,8 +245,6 @@ groups() ->
 
         % sync gossip
         pending_transactions,  %% NG: fix after block reward/fees are done
-        %post_correct_blocks,  NG: won't be in the API
-        %post_broken_blocks,   NG: won't be in the API
         post_correct_tx,
         post_broken_tx,
         post_broken_base58_tx,
@@ -274,8 +263,6 @@ groups() ->
         version,
         info_disabled,
         info_empty,
-        %info_more_than_30,  NG: won't be in the API
-        %info_less_than_30,  NG: won't be in the API
 
         peer_pub_key
       ]},
@@ -288,7 +275,7 @@ groups() ->
         %% requested Endpoints
         block_number,
 
-        %block_txs_count_by_height,
+        block_txs_count_by_height,
         block_txs_count_by_hash,
         block_txs_count_genesis,
         block_txs_count_latest,
@@ -302,11 +289,6 @@ groups() ->
         block_tx_index_by_hash,
         block_tx_index_latest,
         block_tx_index_not_founds,
-
-        %block_txs_list_by_height,   NG: this won't be in the API
-        %block_txs_list_by_hash,
-        %block_txs_list_by_height_invalid_range,
-        %block_txs_list_by_hash_invalid_range,
 
         list_oracles,
         list_oracle_queries,
@@ -1410,80 +1392,6 @@ pending_transactions(_Config) ->
                  get_balance_at_top(aec_base58c:encode(account_pubkey, ReceiverPubKey)),
     ok.
 
-post_correct_blocks(_Config) ->
-    ok = rpc(aec_conductor, stop_mining, []),
-    ok = rpc(aec_conductor, reinit_chain, []),
-    timer:sleep(200),
-    BlocksToPost = max(?DEFAULT_TESTS_COUNT, aecore_suite_utils:latest_fork_height()),
-    aecore_suite_utils:mine_blocks(aecore_suite_utils:node_name(?NODE),
-                                   BlocksToPost + 1),
-    Blocks =
-        lists:map(
-            fun(Height) ->
-                {ok, B} = rpc(aec_chain, get_block_by_height, [Height]),
-                B
-            end,
-            lists:seq(1, BlocksToPost)),
-    ok = rpc(aec_conductor, reinit_chain, []),
-    aecore_suite_utils:connect(aecore_suite_utils:node_name(?NODE)),
-    GH = rpc(aec_chain, top_header, []),
-    0 = aec_headers:height(GH), %chain is empty
-    lists:foreach(
-        fun(Block) ->
-            {ok, 200, _} = post_block(Block),
-            H = rpc(aec_chain, top_header, []),
-            {ok, HH} = aec_headers:hash_header(H),
-            {ok, BH} = aec_blocks:hash_internal_representation(Block),
-            BH = HH % block accepted
-        end,
-        Blocks),
-
-    ToMine = aecore_suite_utils:latest_fork_height(),
-    aecore_suite_utils:mine_blocks(aecore_suite_utils:node_name(?NODE),
-                                   ToMine + 1),
-    ok.
-
-post_broken_blocks(Config) ->
-    aecore_suite_utils:mine_blocks(aecore_suite_utils:node_name(?NODE), 2),
-    {ok, CorrectBlock} = rpc(aec_chain, get_block_by_height, [1]),
-    RpcFun = fun(M, F, A) -> rpc(?NODE, M, F, A) end,
-    {ok, DbCfg} = aecore_suite_utils:get_node_db_config(RpcFun),
-    aecore_suite_utils:stop_node(?NODE, Config),
-    aecore_suite_utils:delete_node_db_if_persisted(DbCfg),
-    aecore_suite_utils:start_node(?NODE, Config),
-    aecore_suite_utils:connect(aecore_suite_utils:node_name(?NODE)),
-    GH = rpc(aec_chain, top_header, []),
-    0 = aec_headers:height(GH), %chain is empty
-    CorrectBlockMap =
-        aehttp_api_parser:encode(block, CorrectBlock),
-    BrokenBlocks =
-        lists:map(
-            fun({Key, Value}) ->
-                BrokenBlock = maps:put(Key, Value, CorrectBlockMap),
-                {Key, BrokenBlock}
-            end,
-        [{<<"prev_hash">>, aec_base58c:encode(block_hash, <<"foo">>)},
-         {<<"state_hash">>, aec_base58c:encode(block_state_hash, <<"foo">>)},
-         {<<"txs_hash">>, aec_base58c:encode(block_tx_hash, <<"foo">>)},
-         {<<"target">>, 42},
-         {<<"nonce">>, 42},
-         {<<"time">>, 42},
-         {<<"version">>, 42},
-         {<<"pow">>, lists:seq(1, 42)},
-         {<<"transactions">>, [#{<<"tx">> => <<"foo">>}]},
-         {<<"miner">>, aec_base58c:encode(account_pubkey, <<"foo">>)}
-        ]),
-
-    lists:foreach(
-        fun({BrokenField, BlockMap}) ->
-            ct:log("Testing with a broken ~p", [BrokenField]),
-            {ok, 400, #{<<"reason">> := <<"Block rejected">>}} = post_block_map(BlockMap),
-            H = rpc(aec_chain, top_header, []),
-            0 = aec_headers:height(H) %chain is still empty
-        end,
-        BrokenBlocks),
-    ok.
-
 %% Even though a tx with a unknown sender pubkey would be accepted, we need
 %% a valid account nonce; that's why we mine a while
 post_correct_tx(_Config) ->
@@ -1649,45 +1557,6 @@ info_empty(_Config) ->
     ForkHeight = aecore_suite_utils:latest_fork_height(),
     aecore_suite_utils:mine_blocks(aecore_suite_utils:node_name(?NODE),
                                    ForkHeight),
-    ok.
-
-info_more_than_30(_Config) ->
-    test_info(40).
-
-info_less_than_30(_Config) ->
-    test_info(20).
-
-test_info(BlocksToMine) ->
-    true = aecore_suite_utils:latest_fork_height() < BlocksToMine,
-    ok = rpc(aec_conductor, reinit_chain, []),
-    rpc(application, set_env, [aehttp, enable_debug_endpoints, true]),
-    ExpectedMineRate = 100,
-    aecore_suite_utils:mine_blocks(aecore_suite_utils:node_name(?NODE),
-                                   BlocksToMine + 1, ExpectedMineRate),
-    {ok, 200, #{<<"last_30_blocks_time">> := Summary}} = get_info(),
-    ExpectedCnt = min(BlocksToMine + 1, 30),
-    ExpectedCnt = length(Summary),
-    lists:foldl(
-        fun(BlockSummary, 0) ->
-            #{<<"difficulty">> := 1.0,
-              <<"height">> := 0,
-              <<"time">>  := 0} = BlockSummary;
-        (BlockSummary, ExpectedHeight) ->
-            #{<<"height">> := ExpectedHeight} = BlockSummary,
-            {ok, 200, BlockMap} = get_block_by_height(ExpectedHeight),
-            #{<<"time">> := Time, <<"target">> := Target} = BlockMap,
-            #{<<"time">> := Time} = BlockSummary,
-            Difficulty = aec_pow:target_to_difficulty(Target),
-            #{<<"difficulty">> := Difficulty} = BlockSummary,
-            {ok, 200, PreviousBlockMap} = get_block_by_height(ExpectedHeight -1),
-            #{<<"time">> := PrevTime} = PreviousBlockMap,
-            TimeDelta = Time - PrevTime,
-            #{<<"time_delta_to_parent">> := TimeDelta} = BlockSummary,
-            ExpectedHeight -1
-        end,
-        BlocksToMine,
-        Summary),
-
     ok.
 
 
@@ -2237,73 +2106,6 @@ generic_block_tx_index_test(CallApi) when is_function(CallApi, 3)->
         lists:seq(ForkHeight, ForkHeight + BlocksToMine)), % from latest fork
     ok.
 
-block_txs_list_by_height(_Config) ->
-    generic_range_test(fun get_block_txs_list_by_height/4,
-                        fun(H) -> H end).
-
-block_txs_list_by_hash(_Config) ->
-    generic_range_test(fun get_block_txs_list_by_hash/4,
-                        fun(H) ->
-                            {ok, Hash} = block_hash_by_height(H),
-                            Hash
-                        end).
-
-generic_range_test(GetTxsApi, HeightToKey) ->
-    MaximumRange = rpc(aec_chain, max_block_range, []),
-    CurrentHeight = aec_blocks:height(rpc(aec_chain, top_block, [])),
-    BlocksToMine = max(2 * MaximumRange - CurrentHeight, 0),
-    aecore_suite_utils:mine_blocks(aecore_suite_utils:node_name(?NODE),
-                                   BlocksToMine + 1),
-    lists:foreach(
-        fun(From) ->
-            lists:foreach(
-                fun(Length) ->
-                    single_range_test(From, From + Length,
-                                       GetTxsApi, HeightToKey)
-                end,
-                [0, 1, MaximumRange - 1, MaximumRange])
-        end,
-        [0, 1, MaximumRange - 1, MaximumRange]),
-    ok.
-
-single_range_test(HeightFrom, HeightTo, GetTxsApi, HeightToKey) ->
-    TxEncoding = [default, message_pack, json],
-    AllTestedTxTypes = [[<<"spend_tx">>]],
-    lists:foreach(
-        fun({Encoding, TxTypes}) ->
-            From = HeightToKey(HeightFrom),
-            To = HeightToKey(HeightTo),
-
-            % all transactions
-            {ok, 200, Result} = GetTxsApi(From, To, Encoding, #{}),
-            ExpectedResult =
-                expected_range_result(HeightFrom, HeightTo, Encoding, all),
-            ct:log("Expected Result ~p, Actual result ~p",
-                    [ExpectedResult, Result]),
-            ExpectedResult = Result,
-
-
-            {ok, 200, Result1} = GetTxsApi(From, To, Encoding, #{include => TxTypes}),
-            ExpectedResult1 =
-                expected_range_result(HeightFrom, HeightTo, Encoding, {only, TxTypes}),
-            ct:log("Showing only ~p, Expected Result ~p,~n Actual result ~p",
-                    [TxTypes, ExpectedResult1, Result1]),
-            ExpectedResult1 = Result1,
-
-            {ok, 200, Result2} = GetTxsApi(From, To, Encoding, #{exclude => TxTypes}),
-            ExpectedResult2 =
-                expected_range_result(HeightFrom, HeightTo, Encoding, {exclude, TxTypes}),
-            ct:log("Showing excluded ~p, Expected Result ~p,~n Actual result ~p",
-                    [TxTypes, ExpectedResult2, Result2]),
-            ExpectedResult2 = Result2,
-            ok
-        end,
-        [{E, TxT} || E <- TxEncoding, TxT <- AllTestedTxTypes]).
-
-expected_range_result(HeightFrom, HeightTo, TxEncoding0, TxTypes) ->
-    expected_range_result(HeightFrom, HeightTo, TxEncoding0, TxTypes,
-                          fun(_Tx) -> true end, false).
-
 encode_pending_tx(Txs, TxEncoding0) ->
     TxEncoding =
         case TxEncoding0 of
@@ -2373,79 +2175,6 @@ apply_tx_type_filter(TxTypes, Txs) ->
 tx_type(SignedTx) ->
     Tx = aetx_sign:tx(SignedTx),
     aetx:tx_type(Tx).
-
-block_txs_list_by_height_invalid_range(_Config) ->
-    InitialHeight = aec_blocks:height(rpc(aec_chain, top_block, [])),
-    MaximumRange = rpc(aec_chain, max_block_range, []),
-    BlocksToMine = max(2 * MaximumRange - InitialHeight, 0),
-    aecore_suite_utils:mine_blocks(aecore_suite_utils:node_name(?NODE),
-                                   BlocksToMine + 1),
-    ValidateError =
-        fun(From, To, Error) ->
-            lists:foreach(
-                fun(Opts) ->
-                    Error = get_block_txs_list_by_height(From, To, Opts, #{})
-                end,
-                [default, message_pack, json])
-        end,
-    InvalidRange = {ok, 400, #{<<"reason">> => <<"From's height is bigger than To's">>}},
-    lists:foreach(
-        fun({From, To}) -> ValidateError(From, To, InvalidRange) end,
-        [{1, 0}, {3, 1}]),
-    RangeTooBig = {ok, 400, #{<<"reason">> => <<"Range too big">>}},
-    lists:foreach(
-        fun({From, To}) -> ValidateError(From, To, RangeTooBig) end,
-        [{0, MaximumRange +1}, {1, MaximumRange + 2}]),
-    ChainTooShort = {ok, 404, #{<<"reason">> => <<"Chain too short">>}},
-    CurrentHeight = aec_blocks:height(rpc(aec_chain, top_block, [])),
-    lists:foreach(
-        fun({From, To}) -> ValidateError(From, To, ChainTooShort) end,
-        [{CurrentHeight - 1, CurrentHeight + 1},
-         {CurrentHeight, CurrentHeight + 1},
-         {CurrentHeight + 1, CurrentHeight + 1}]),
-    ok.
-
-block_txs_list_by_hash_invalid_range(_Config) ->
-    InitialHeight = aec_blocks:height(rpc(aec_chain, top_block, [])),
-    MaximumRange = rpc(aec_chain, max_block_range, []),
-    BlocksToMine = 2 * MaximumRange,
-    aecore_suite_utils:mine_blocks(aecore_suite_utils:node_name(?NODE),
-                                   BlocksToMine + 1),
-    ValidateError =
-        fun(From, To, Error) ->
-            lists:foreach(
-                fun(Opts) ->
-                    case get_block_txs_list_by_hash(From, To, Opts, #{}) of
-                      Error -> Error;
-                      Other -> error({expected, Error, got, Other})
-                    end
-                end,
-                [default, message_pack, json])
-        end,
-    {ok, GenBlockHash} = block_hash_by_height(0),
-    {ok, Block1Hash} = block_hash_by_height(InitialHeight),
-    {ok, Block2Hash} = block_hash_by_height(InitialHeight + 1),
-    {ok, BlockX1Hash} = block_hash_by_height(InitialHeight + MaximumRange + 1),
-    {ok, BlockX2Hash} = block_hash_by_height(InitialHeight + MaximumRange + 2),
-    InvalidRange = {ok, 400, #{<<"reason">> => <<"From's height is bigger than To's">>}},
-    lists:foreach(
-        fun({From, To}) -> ValidateError(From, To, InvalidRange) end,
-        [{Block1Hash, GenBlockHash},
-         {Block2Hash, Block1Hash}]),
-    RangeTooBig = {ok, 400, #{<<"reason">> => <<"Range too big">>}},
-    lists:foreach(
-        fun({From, To}) -> ValidateError(From, To, RangeTooBig) end,
-        [{GenBlockHash, BlockX1Hash},
-         {Block1Hash, BlockX2Hash}]),
-    ChainTooShort = {ok, 404, #{<<"reason">> => <<"Block not found">>}},
-    lists:foreach(
-        fun({From, To}) -> ValidateError(From, To, ChainTooShort) end,
-        [{GenBlockHash, aec_base58c:encode(block_hash, random_hash())},
-         {Block1Hash, aec_base58c:encode(block_hash, random_hash())},
-         {aec_base58c:encode(block_hash, random_hash()), Block1Hash},
-         {aec_base58c:encode(block_hash, random_hash()), GenBlockHash}
-        ]),
-    ok.
 
 naming_system_manage_name(_Config) ->
     {ok, PubKey} = rpc(aec_keys, pubkey, []),
@@ -3706,10 +3435,6 @@ get_block_by_hash(Hash, TxObjects) ->
     http_request(Host, get, "block/hash/" ++ http_uri:encode(Hash), Params).
 
 
-get_header_by_hash(Hash) ->
-    Host = external_address(),
-    http_request(Host, get, "header-by-hash", [{hash, Hash}]).
-
 get_transactions() ->
     Host = external_address(),
     http_request(Host, get, "transactions", []).
@@ -3791,13 +3516,6 @@ get_account_transactions(EncodedPubKey, Params) ->
     http_request(Host, get, "account/" ++ binary_to_list(EncodedPubKey) ++ "/txs",
                  Params).
 
-post_block(Block) ->
-    post_block_map(aehttp_api_parser:encode(block, Block)).
-
-post_block_map(BlockMap) ->
-    Host = external_address(),
-    http_request(Host, post, "block", BlockMap).
-
 post_tx(TxSerialized) ->
     Host = external_address(),
     http_request(Host, post, "tx", #{tx => TxSerialized}).
@@ -3867,20 +3585,6 @@ get_block_tx_by_index_latest(Index, TxObjects) ->
     Params = tx_encoding_param(TxObjects),
     Host = internal_address(),
     http_request(Host, get, "block/tx/latest/" ++ integer_to_list(Index), Params).
-
-get_block_txs_list_by_height(From, To, TxObjects, TxTypes) ->
-    Params0 = tx_encoding_param(TxObjects),
-    Filter = make_tx_types_filter(TxTypes),
-    Params = maps:merge(Params0, maps:merge(Filter, #{from => From, to => To})),
-    Host = internal_address(),
-    http_request(Host, get, "block/txs/list/height", Params).
-
-get_block_txs_list_by_hash(From, To, TxObjects, TxTypes) ->
-    Params0 = tx_encoding_param(TxObjects),
-    Filter = make_tx_types_filter(TxTypes),
-    Params = maps:merge(Params0, maps:merge(Filter, #{from => From, to => To})),
-    Host = internal_address(),
-    http_request(Host, get, "block/txs/list/hash", Params).
 
 make_tx_types_filter(Filter) ->
     Includes = maps:get(include, Filter, []),
@@ -4346,9 +4050,6 @@ header_to_endpoint_top(Header) ->
     {ok, Hash} = aec_headers:hash_header(Header),
     maps:put(<<"hash">>, aec_base58c:encode(block_hash, Hash),
              aehttp_api_parser:encode(header, Header)).
-
-block_to_endpoint_gossip_map(Block) ->
-    aehttp_api_parser:encode(block, Block).
 
 block_to_endpoint_map(Block) ->
     block_to_endpoint_map(Block, #{tx_encoding => message_pack}).

@@ -292,7 +292,7 @@ groups() ->
         block_txs_count_by_hash,
         block_txs_count_genesis,
         block_txs_count_latest,
-        %block_txs_count_pending,
+        block_txs_count_pending,
 
         block_txs_count_by_height_not_found,
         block_txs_count_by_hash_not_found,
@@ -2053,26 +2053,31 @@ block_txs_count_pending(_Config) ->
     ok = rpc(application, set_env, [aecore, expected_mine_rate,
                                     60 * 60 * 1000]), % aim at one block an hour
     InsertedTxsCount = add_spend_txs(),
+    %% NG: here we start mining again, but the first block must be a key block.
+    %% get_block_txs_count_preset returns the current block candidate - the key block
+    %% being mined which doesn't include any txs.
     rpc(aec_conductor, start_mining, []),
-    GetPending =
-        fun()->
-            aec_test_utils:exec_with_timeout(
-               fun TryGetting() ->
-                  case get_block_txs_count_preset("pending") of
-                      {ok, 200, B} -> B;
-                      {ok, 404, _} ->
-                          timer:sleep(100),
-                          TryGetting()
-                  end
-               end,
-               10000)
-        end,
+    %GetPending =
+    %    fun()->
+    %        aec_test_utils:exec_with_timeout(
+    %           fun TryGetting() ->
+    %              case get_block_txs_count_preset("pending") of
+    %                  {ok, 200, B} -> B;
+    %                  {ok, 404, _} ->
+    %                      timer:sleep(100),
+    %                      TryGetting()
+    %              end
+    %           end,
+    %           10000)
+    %    end,
+    %% NG: in order to get the number of pending txs, we check the mempool
+    GetPending = fun() ->
+                         {ok, 200, Txs} = get_transactions(),
+                         {ok, #{<<"count">> => length(Txs)}}
+                 end,
     {ok, #{<<"count">> := TxsCount}} = GetPending(),
     ct:log("Inserted transactions count ~p, transactions count in the pending block ~p",
            [InsertedTxsCount, TxsCount]),
-    % the assert below relies on no block being mined during the test run
-    % this is achieved by mining BlocksToPremine number of blocks and setting
-    % a high value for expected_mine_rate
     ?assertEqual(InsertedTxsCount, TxsCount),
     rpc(aec_conductor, stop_mining, []),
     ok.

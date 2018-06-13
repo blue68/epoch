@@ -434,8 +434,9 @@ init_per_group(channel_websocket, Config) ->
 
     {ok, 200, _} = post_spend_tx(IPubkey, IStartAmt, Fee),
     {ok, 200, _} = post_spend_tx(RPubkey, RStartAmt, Fee),
-    {ok, [Block]} = aecore_suite_utils:mine_blocks(aecore_suite_utils:node_name(?NODE), 1),
-    [_Spend1, _Spend2] = aec_blocks:txs(Block),
+    {ok, [KeyBlock, MicroBlock]} = aecore_suite_utils:mine_blocks(
+                                     aecore_suite_utils:node_name(?NODE), 2),
+    [_Spend1, _Spend2] = aec_blocks:txs(MicroBlock),
     assert_balance(IPubkey, IStartAmt),
     assert_balance(RPubkey, RStartAmt),
     Participants = #{initiator => #{pub_key => IPubkey,
@@ -2741,7 +2742,11 @@ sc_ws_open(Config) ->
     assert_balance(RPubkey, RStartAmt - RAmt),
 
     % mine min depth
-    aecore_suite_utils:mine_blocks(aecore_suite_utils:node_name(?NODE), 4),
+    % NG: we need at least 4 key blocks to increase height by 4
+    aecore_suite_utils:mine_blocks(aecore_suite_utils:node_name(?NODE), 2),
+    aecore_suite_utils:mine_blocks(aecore_suite_utils:node_name(?NODE), 2),
+    aecore_suite_utils:mine_blocks(aecore_suite_utils:node_name(?NODE), 2),
+    aecore_suite_utils:mine_blocks(aecore_suite_utils:node_name(?NODE), 2),
 
     channel_send_locking_infos(IConnPid, RConnPid),
 
@@ -3158,7 +3163,7 @@ wait_for_signed_transaction_in_block(SignedTx) ->
     MineTx =
         fun Try(0) -> did_not_mine;
             Try(Attempts) ->
-                aecore_suite_utils:mine_blocks(aecore_suite_utils:node_name(?NODE), 1),
+                aecore_suite_utils:mine_blocks(aecore_suite_utils:node_name(?NODE), 2),
                 case get_tx(TxHash, json) of
                     {ok, 200, #{<<"transaction">> := #{<<"block_height">> := H}}}
                         when H =/= -1-> ok;

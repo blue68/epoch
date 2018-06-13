@@ -669,27 +669,36 @@ start_micro_signing(#state{consensus = #consensus{leader = true}, micro_block_ca
     %% We need to generate a new block candidate first.
     create_micro_block_candidate(State);
 start_micro_signing(#state{consensus = #consensus{leader = true},
-                            micro_block_candidate = #candidate{top_hash = MicroBlockHash} = Candidate,
-                            block_candidate = #candidate{top_hash = KeyBlockHash},
-                            seen_top_block_hash = SeenHash} = State)
-                   when SeenHash == KeyBlockHash orelse SeenHash == MicroBlockHash ->
-    epoch_mining:info("Starting signing round"),
-    HeaderBin = Candidate#candidate.bin,
-    Info      = [{top_block_hash, State#state.seen_top_block_hash}],
-    aec_events:publish(start_micro_signing, Info),
-    Fun = fun() ->
-                  aec_keys:sign(HeaderBin)
-          end,
-    dispatch_worker(micro_signing, Fun, State);
-start_micro_signing(#state{consensus = #consensus{leader = true},
-                           micro_block_candidate = #candidate{top_hash = MicroBlockHash},
-                           block_candidate = #candidate{top_hash = KeyBlockHash},
+                           micro_block_candidate = #candidate{top_hash = MicroBlockHash} = MicroCandidate,
+                           block_candidate = KeyBCandidate,
+                           seen_top_block_hash = SeenHash} = State) ->
+    MicroSigning = fun() ->
+                        epoch_mining:info("Starting signing round"),
+                        HeaderBin = MicroCandidate#candidate.bin,
+                        Info      = [{top_block_hash, State#state.seen_top_block_hash}],
+                        aec_events:publish(start_micro_signing, Info),
+                        Fun = fun() ->
+                            aec_keys:sign(HeaderBin)
+                        end,
+                        dispatch_worker(micro_signing, Fun, State)
+                   end,
+    case {MicroBlockHash, KeyBCandidate} of
+        {SeenHash, _} ->
+            MicroSigning();
+        {_, #candidate{top_hash = SeenHash}} ->
+            MicroSigning();
+        _ ->
+            create_micro_block_candidate(State#state{block_candidate = undefined})
+    end;
+start_micro_signing(#state{consensus = Consensus,
+                           micro_block_candidate = MicroCandidate,
+                           block_candidate = KeyBCandidate,
                            seen_top_block_hash = SeenHash
-                           } = State) ->
+                           }) ->
     %% Probably no longer the leader
-    epoch_mining:debug("Fallback clause, candidate conditions not met. micro top: ~p, key top: ~p, seen top: ~p",
-                       [MicroBlockHash, KeyBlockHash, SeenHash]),
-    create_micro_block_candidate(State#state{block_candidate = undefined}).
+    epoch_mining:debug("Fallback clause, candidate conditions not met. micro: ~p, key: ~p, seen top: ~p, consensus: ~p",
+                       [MicroCandidate, KeyBCandidate, SeenHash, Consensus]),
+    ok.
 
 handle_micro_signing_reply(_Reply, #state{micro_block_candidate = undefined} = State) ->
     %% Something invalidated the block candidate already.
@@ -903,8 +912,8 @@ handle_add_block(Block, #state{consensus = #consensus{leader_key = LeaderKey}} =
 
 setup_loop(State, LeaderKey, {created, block}) ->
     State1 = State#state{consensus = #consensus{leader = true, leader_key = LeaderKey}},
-    State2 = start_mining(State1),
-    start_micro_signing(State2);
+    State2 = start_micro_signing(State1),
+    start_mining(State2);
 setup_loop(State, LeaderKey, {received, block}) ->
     State1 = State#state{consensus = #consensus{leader = false, leader_key = LeaderKey}},
     start_mining(State1);

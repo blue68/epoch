@@ -166,7 +166,11 @@ new_key_with_state(LastBlock, CurrentKeyBlock, Miner, Trees0) ->
     NewHeight = LastBlockHeight + 1,
     Version = protocol_effective_at_height(NewHeight),
 
-    {UncompleteBlock#block{height = NewHeight, version = Version, miner = Miner, key_hash = undefined}, Trees}.
+    {UncompleteBlock#block{height = NewHeight,
+                           version = Version,
+                           miner = Miner,
+                           key_hash = <<0:?BLOCK_HEADER_HASH_BYTES/unit:8>>},
+     Trees}.
 
 -spec to_header(block()) -> aec_headers:header().
 to_header(#block{height = Height,

@@ -92,7 +92,7 @@ start_link() ->
 
 init([]) ->
     aec_events:subscribe(block_created),
-    %%aec_events:subscribe(micro_block_created), NG: TODO
+    aec_events:subscribe(micro_block_created),
     aec_events:subscribe(top_changed),
     aec_events:subscribe(tx_created),
 
@@ -165,8 +165,9 @@ handle_info({gproc_ps_event, Event, #{info := Info}}, State) ->
     PeerIds = [ aec_peers:peer_id(P) || P <- aec_peers:get_random(all) ],
     NonSyncingPeerIds = [ P || P <- PeerIds, not peer_in_sync(State, P) ],
     case Event of
-        block_created -> enqueue(block, Info, NonSyncingPeerIds);
-        top_changed   -> enqueue(block, Info, NonSyncingPeerIds);
+        block_created -> epoch_mining:info("SYNC KEY BLOCK: ~p", [Info]), enqueue(block, Info, NonSyncingPeerIds);
+        micro_block_created -> epoch_mining:info("SYNC MICRO BLOCK: ~p", [Info]), enqueue(block, Info, NonSyncingPeerIds);
+        top_changed   -> epoch_mining:info("SYNC TOP: ~p", [Info]), enqueue(block, Info, NonSyncingPeerIds);
         tx_created    -> enqueue(tx, Info, NonSyncingPeerIds);
         tx_received   -> enqueue(tx, Info, NonSyncingPeerIds);
         _             -> ignore

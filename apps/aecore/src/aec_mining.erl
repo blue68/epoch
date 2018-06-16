@@ -5,7 +5,7 @@
 -module(aec_mining).
 
 %% API
--export([create_micro_block_candidate/3, create_key_block_candidate/4,
+-export([create_micro_block_candidate/3, create_key_block_candidate/5,
          need_to_regenerate/1,
          mine/3,
          get_miner_account_balance/0]). %% For tests.
@@ -26,13 +26,13 @@ create_micro_block_candidate(TopBlock, CurrentKeyBlock, TopBlockTrees) ->
     create_micro_block_candidate(get_txs_to_mine_in_pool(Hash), TopBlock, CurrentKeyBlock, TopBlockTrees).
 
 -spec create_key_block_candidate(aec_blocks:block(), aec_blocks:block(), aec_trees:trees(),
-    list(aec_headers:header())) -> {ok, aec_blocks:block(), aec_pow:nonce()} | {error, term()}.
-create_key_block_candidate(TopBlock, CurrentKeyBlock, TopBlockTrees, AdjHeaders) ->
+    list(aec_headers:header()), list(aetx_sign:signed_tx())) -> {ok, aec_blocks:block(), aec_pow:nonce()} | {error, term()}.
+create_key_block_candidate(TopBlock, CurrentKeyBlock, TopBlockTrees, AdjHeaders, EpochTxs) ->
     case aec_keys:pubkey() of
         {error, _} = Error ->
             Error;
         {ok, Miner} ->
-            Block = aec_blocks:new_key(TopBlock, CurrentKeyBlock, Miner, TopBlockTrees),
+            Block = aec_blocks:new_key(TopBlock, CurrentKeyBlock, Miner, EpochTxs, TopBlockTrees),
             case adjust_target(Block, AdjHeaders) of
                 {ok, AdjBlock} ->
                     {ok, AdjBlock, aec_pow:pick_nonce()};

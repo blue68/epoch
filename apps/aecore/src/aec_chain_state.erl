@@ -13,6 +13,7 @@
         , hash_is_connected_to_genesis/1
         , hash_is_in_main_chain/1
         , insert_block/1
+        , get_award_applicable_txs/1
         ]).
 
 %% For tests
@@ -165,6 +166,9 @@ assert_not_new_genesis(Node, #{genesis_block_hash := GHash}) ->
         true  -> internal_error(rejecting_new_genesis_block);
         false -> ok
     end.
+
+node_is_genesis(Node = #node{}) ->
+    node_height(Node) =:= aec_block_genesis:height().
 
 %% this is when we insert the genesis block the first time
 node_is_genesis(Node, #{genesis_block_hash := undefined}) ->
@@ -514,28 +518,55 @@ assert_state_hash_valid(Trees, Node) ->
 
 apply_node_transactions(Node, Trees) ->
     Txs = db_get_txs(hash(Node)),
-    PrevBlockTxs = get_prev_node_txs(Node),
     Height = node_height(Node),
     Version = node_version(Node),
+    BlockType = node_type(Node),
 
     %% TODO: NG - it looks like we should keep Miner and Height of the prev key block in state in aec_chain_state
     %% TODO: fixit ^^
     Miner = case is_micro_block(Node) of
-        true ->
-            node_miner(db_get_node(node_key_hash(Node)));
-        false ->
-            node_miner(Node)
+        true -> node_miner(db_get_node(node_key_hash(Node)));
+        false -> node_miner(Node)
     end,
+    PrevMiner = get_prev_miner(Node),
+    EpochTxs = case is_micro_block(Node) orelse node_is_genesis(Node) of
+                   true  -> [];
+                   false -> get_award_applicable_txs(db_get_node(prev_hash(Node)))
+               end,
 
-    case aec_trees:apply_signed_txs_strict(Miner, Txs, PrevBlockTxs, Trees, Height, Version) of
+    case aec_trees:apply_signed_txs_strict(BlockType, Miner, Txs, PrevMiner, EpochTxs, Trees, Height, Version) of
         {ok, _, NewTrees} -> NewTrees;
         {error,_What} -> internal_error(invalid_transactions_in_block)
     end.
 
-get_prev_node_txs(Node) ->
-    case node_height(Node) =:= aec_block_genesis:height() of
+get_award_applicable_txs(Block = #block{}) ->
+    get_award_applicable_txs(wrap_block(Block));
+get_award_applicable_txs(Node = #node{}) ->
+    case is_key_block(Node) orelse node_is_genesis(Node) of
         true  -> [];
-        false -> db_get_txs(prev_hash(Node))
+        false -> get_award_applicable_txs(hash(Node), [])
+    end.
+
+get_award_applicable_txs(Hash, Acc) ->
+    Node = db_get_node(Hash),
+    case is_key_block(Node) of
+        true  -> Acc;
+        false -> get_award_applicable_txs(prev_hash(Node), db_get_txs(Hash) ++ Acc)
+    end.
+
+get_prev_miner(Node) ->
+    case {node_height(Node) =:= aec_block_genesis:height(), is_micro_block(Node)} of
+        {true, _} -> node_miner(Node);
+        {false, true} -> node_key_hash(Node);
+        _ ->
+            PrevNode = db_get_node(prev_hash(Node)),
+            case is_micro_block(PrevNode) of
+                true ->
+                    PrevKeyHash = node_key_hash(PrevNode),
+                    PrevKeyNode = db_get_node(PrevKeyHash),
+                    node_miner(PrevKeyNode);
+                false -> node_miner(PrevNode)
+            end
     end.
 
 find_fork_point(Hash1, Hash2) ->

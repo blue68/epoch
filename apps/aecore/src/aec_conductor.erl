@@ -772,7 +772,8 @@ create_key_block_candidate(State) ->
     Fun = fun() ->
                   {TopBlock, CurrentKeyBlock, TopBlockState} = aec_chain:get_top_and_key_with_state(),
                   AdjChain = get_adjustment_headers(CurrentKeyBlock),
-                  {aec_mining:create_key_block_candidate(TopBlock, CurrentKeyBlock, TopBlockState, AdjChain),
+                  EpochTxs = aec_chain_state:get_award_applicable_txs(TopBlock),
+                  {aec_mining:create_key_block_candidate(TopBlock, CurrentKeyBlock, TopBlockState, AdjChain, EpochTxs),
                    State#state.seen_top_block_hash}
           end,
     dispatch_worker(create_key_block_candidate, Fun, State).
@@ -880,7 +881,7 @@ handle_add_block(Block, #state{consensus = #consensus{leader_key = LeaderKey}} =
     {ok, Hash} = aec_headers:hash_header(Header),
     case aec_chain:has_block(Hash) of
         true ->
-            epoch_mining:debug("Block already in chain", []),
+            epoch_mining:info("Block already in chain", []),
             {ok, State};
         false ->
             case aec_validation:validate_block(Block, LeaderKey) of

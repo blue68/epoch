@@ -2,6 +2,7 @@
 
 [This release][this-release] is focused on TODOFILLMEIN.
 It:
+* Enriches channels' websocket API with deposit and withdrawal sequences.
 * Does this.
 
 [this-release]: https://github.com/aeternity/epoch/releases/tag/v0.17.0

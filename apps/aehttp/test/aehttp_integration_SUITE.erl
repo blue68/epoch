@@ -3602,6 +3602,13 @@ sc_ws_deposit_and_close(Config, Origin) when Origin =:= initiator
     {SStartB1, AStartB} = channel_participants_balances(SenderPubkey, AckPubkey),
     {SStartB1, _} = {SStartB - 2 - 1, SStartB},
 
+    aecore_suite_utils:mine_blocks(aecore_suite_utils:node_name(?NODE), 5),
+    {ok, #{<<"event">> := <<"own_deposit_locked">>}} = ?WS:wait_for_channel_event(SenderConnPid, info),
+    {ok, #{<<"event">> := <<"own_deposit_locked">>}} = ?WS:wait_for_channel_event(AckConnPid, info),
+
+    {ok, #{<<"event">> := <<"deposit_locked">>}} = ?WS:wait_for_channel_event(SenderConnPid, info),
+    {ok, #{<<"event">> := <<"deposit_locked">>}} = ?WS:wait_for_channel_event(AckConnPid, info),
+
     ok = ?WS:stop(SenderConnPid),
     ok = ?WS:stop(AckConnPid),
     ok.
@@ -3646,6 +3653,14 @@ sc_ws_withdraw_and_close(Config, Origin) when Origin =:= initiator
     % assert acknowledger balance have not changed
     {SStartB1, AStartB} = channel_participants_balances(SenderPubkey, AckPubkey),
     {SStartB1, _} = {SStartB + 2 - 1, SStartB},
+
+    aecore_suite_utils:mine_blocks(aecore_suite_utils:node_name(?NODE), 5),
+    {ok, #{<<"event">> := <<"own_withdraw_locked">>}} = ?WS:wait_for_channel_event(SenderConnPid, info),
+    {ok, #{<<"event">> := <<"own_withdraw_locked">>}} = ?WS:wait_for_channel_event(AckConnPid, info),
+
+    {ok, #{<<"event">> := <<"withdraw_locked">>}} = ?WS:wait_for_channel_event(SenderConnPid, info),
+    {ok, #{<<"event">> := <<"withdraw_locked">>}} = ?WS:wait_for_channel_event(AckConnPid, info),
+
 
     ok = ?WS:stop(SenderConnPid),
     ok = ?WS:stop(AckConnPid),

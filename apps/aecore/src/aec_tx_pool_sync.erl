@@ -294,7 +294,7 @@ mk_sync(PeerId, PeerCon) ->
 
 repair_sync(Sync = #sync{ peer_id = PeerId }) ->
     case aec_peers:get_connection(PeerId) of
-        {ok, {connected, NewPeerCon}} ->
+        {ok, NewPeerCon} ->
             NewRef = erlang:monitor(process, NewPeerCon),
             {ok, Sync#sync{ peer_con = NewPeerCon, peer_con_ref = NewRef }};
         _ ->

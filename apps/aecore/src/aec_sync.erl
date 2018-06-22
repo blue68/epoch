@@ -94,7 +94,7 @@ init([]) ->
     BlockedPeers = parse_peers(aeu_env:user_map_or_env(<<"blocked_peers">>, aecore, blocked_peers, [])),
 
     [aec_peers:block_peer(P) || P <- BlockedPeers],
-    aec_peers:add_and_ping_peers(Peers, true),
+    aec_peers:add_trusted(Peers),
 
     erlang:process_flag(trap_exit, true),
     {ok, #state{}}.

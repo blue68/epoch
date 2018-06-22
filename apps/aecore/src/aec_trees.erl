@@ -162,9 +162,10 @@ set_oracles(Trees, Oracles) ->
 -spec perform_pre_transformations(block_type(), trees(), aec_blocks:height()) -> trees().
 perform_pre_transformations(key_block, Trees, Height) ->
     Trees1 = aeo_state_tree:prune(Height, Trees),
-    set_ns(Trees1, aens_state_tree:prune(Height, ns(Trees1)));
+    Trees2 = set_ns(Trees1, aens_state_tree:prune(Height, ns(Trees1))),
+    aect_call_state_tree:prune(Height, Trees2);
 perform_pre_transformations(micro_block, Trees, Height) ->
-    aect_call_state_tree:prune(Height, Trees).
+    Trees.
 
 -spec calls(trees()) -> aect_call_state_tree:tree().
 calls(Trees) ->

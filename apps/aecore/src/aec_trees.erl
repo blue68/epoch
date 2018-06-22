@@ -31,7 +31,7 @@
 -export([apply_txs_on_state_trees/4,
          apply_txs_on_state_trees_strict/4,
          grant_fee_to_miner/3,
-         perform_pre_transformations/2
+         perform_pre_transformations/3
         ]).
 
 %% Proof of inclusion
@@ -159,11 +159,12 @@ oracles(Trees) ->
 set_oracles(Trees, Oracles) ->
     Trees#trees{oracles = Oracles}.
 
--spec perform_pre_transformations(trees(), aec_blocks:height()) -> trees().
-perform_pre_transformations(Trees, Height) ->
-    Trees0 = aect_call_state_tree:prune(Height, Trees),
-    Trees1 = aeo_state_tree:prune(Height, Trees0),
-    set_ns(Trees1, aens_state_tree:prune(Height, ns(Trees1))).
+-spec perform_pre_transformations(block_type(), trees(), aec_blocks:height()) -> trees().
+perform_pre_transformations(key_block, Trees, Height) ->
+    Trees1 = aeo_state_tree:prune(Height, Trees),
+    set_ns(Trees1, aens_state_tree:prune(Height, ns(Trees1)));
+perform_pre_transformations(micro_block, Trees, Height) ->
+    aect_call_state_tree:prune(Height, Trees).
 
 -spec calls(trees()) -> aect_call_state_tree:tree().
 calls(Trees) ->

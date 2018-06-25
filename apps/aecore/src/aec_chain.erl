@@ -378,8 +378,12 @@ get_n_headers_backwards_from_hash(_, 0, Acc) ->
     {ok, Acc};
 get_n_headers_backwards_from_hash({ok, Header}, N, Acc) ->
     PrevHash = aec_headers:prev_hash(Header),
+    NewN = case aec_headers:is_key_header(Header) of
+        true -> N-1;
+        false -> N
+    end,
     NewAcc = [Header|Acc],
-    get_n_headers_backwards_from_hash(get_header(PrevHash), N - 1, NewAcc);
+    get_n_headers_backwards_from_hash(get_header(PrevHash), NewN, NewAcc);
 get_n_headers_backwards_from_hash(error,_N,_Acc) ->
     error.
 

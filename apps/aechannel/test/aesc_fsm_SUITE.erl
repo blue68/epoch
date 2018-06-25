@@ -25,6 +25,7 @@
         , deposit/1
         , withdraw/1
         , multiple_channels/1
+        , shutdown_and_create_channel/1
         ]).
 
 -include_lib("common_test/include/ct.hrl").
@@ -45,6 +46,7 @@ groups() ->
       , deposit
       , withdraw
       , multiple_channels
+      , shutdown_and_create_channel
       ]
      }
     ].
@@ -111,6 +113,44 @@ create_channel(Cfg) ->
     _ = await_signing_request(shutdown_ack, R),
     check_info(1000),
     expect_close_mutual_tx(Ch),
+    ok.
+
+shutdown_and_create_channel(Cfg) ->
+    %% Same channel_id for both channels
+    Cfg1 = [{port, 9341} | Cfg],
+    Cfg2 = [{port, 9342} | Cfg],
+
+    #{ i := #{fsm := FsmI1} = I1
+     , r := #{} = R1} = _Ch1 = await_i(create_channel_fsms(Cfg1)),
+
+    ok = rpc(dev1, aesc_fsm, shutdown, [FsmI1]),
+    _ = await_signing_request(shutdown, I1),
+    _ = await_signing_request(shutdown_ack, R1),
+    check_info(1000),
+
+    {ok, [Tx1]} = rpc(dev1, aec_tx_pool, peek, [10]),
+
+    Debug = true,
+    {I2_1, R2_1, _} = create_channel_fsms(Cfg2),
+    {I2_2, _} = await_signing_request(create_tx, I2_1, Debug),
+    {R2_2, _} = await_signing_request(funding_created, R2_1, Debug),
+    ok = receive_info(I2_2, funding_signed, Debug),
+
+    {ok, [Tx1, Tx2]} = rpc(dev1, aec_tx_pool, peek, [3]),
+    <<"channel_close_mutual_tx">> = aetx:tx_type(aetx_sign:tx(Tx1)),
+    <<"channel_create_tx">> = aetx:tx_type(aetx_sign:tx(Tx2)),
+
+    {ok, Blocks} = mine_blocks(dev1, 4, Debug),
+
+    %% Make sure both tx are in single block
+    [ case aec_blocks:txs(Block) of
+          [] -> ok;
+          [Tx1, Tx2] -> ok;
+          _ -> error(wrong_precondition)
+      end || Block <- Blocks ],
+
+    {_I2_3, _} = await_signing_request(update, I2_2, ?TIMEOUT, Debug),
+    {_R2_3, _} = await_signing_request(update_ack, R2_2, Debug),
     ok.
 
 inband_msgs(Cfg) ->
@@ -274,10 +314,11 @@ ch_loop(I, R, Parent) ->
         die -> ok
     end.
 
-create_channel_(Cfg) ->
-    create_channel_(Cfg, true).
+create_channel_(Cfg) -> create_channel_(Cfg, true).
+create_channel_(Cfg, Debug) -> await_i(create_channel_fsms(Cfg, Debug), Debug).
 
-create_channel_(Cfg, Debug) ->
+create_channel_fsms(Cfg) -> create_channel_fsms(Cfg, true).
+create_channel_fsms(Cfg, Debug) ->
     I = ?config(initiator, Cfg),
     R = ?config(responder, Cfg),
 
@@ -306,7 +347,10 @@ create_channel_(Cfg, Debug) ->
 
     I1 = I#{fsm => FsmI},
     R1 = R#{fsm => FsmR},
+    {I1, R1, Spec}.
 
+await_i(Fsms) -> await_i(Fsms, true).
+await_i({I1, R1, Spec}, Debug) ->
     {I2, R2} = try await_create_tx_i(I1, R1, Debug)
                catch
                    error:Err ->

@@ -38,6 +38,10 @@
         , set_deposit/2
         ]).
 
+-ifdef(TEST).
+-export([internal_set_state/2]).
+-endif.
+
 %%%===================================================================
 %%% Types
 %%%===================================================================
@@ -240,7 +244,10 @@ set_code(X, C) ->
 
 -spec set_state(store(), contract()) -> contract().
 set_state(X, C) ->
-    C#contract{store = assert_field(store, X)}.
+    internal_set_state(assert_field(store, X), C).
+
+internal_set_state(X, C) ->
+    C#contract{store = X}.
 
 -spec set_log(binary(), contract()) -> contract().
 set_log(X, C) ->

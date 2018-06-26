@@ -432,6 +432,52 @@ poi_test_() ->
                   C,
                   [_, _] = Contracts -- [C])
                 || C <- Contracts]
+       end},
+      {"Serialized contract PoI with invalid contract store key fails verification",
+       fun() ->
+               OwnerPubkey = <<123:?MINER_PUB_BYTES/unit:8>>,
+
+               %% Generate contract invalid because of an invalid contract store key.
+               ValidContract = make_contract(OwnerPubkey),
+               InvalidContract =
+                   aect_contracts:internal_set_state(
+                     #{_IllegalContractStoreKey = <<>> => <<"v">>},
+                     ValidContract),
+               ContractId = aect_contracts:id(InvalidContract),
+
+               %% Include invalid contract in state trees.
+               Trees0 = aec_test_utils:create_state_tree(),
+               InvalidTrees =
+                   aec_trees:set_contracts(
+                     Trees0,
+                     aect_state_tree:insert_contract(
+                       InvalidContract, aec_trees:contracts(Trees0))),
+
+               %% Generate PoI for invalid contract.
+               {ok, InvalidPoi0} = ?TEST_MODULE:add_poi(
+                                      contracts, ContractId,
+                                      InvalidTrees,
+                                      ?TEST_MODULE:new_poi(InvalidTrees)),
+               InvalidSerializedPoi0 = ?TEST_MODULE:serialize_poi(InvalidPoi0),
+               %% TODO Check that the produced contract proofdb (fields) enables looking up empty key in contract.
+
+               %% Check that PoI verification fails.
+               InvalidPoi = ?TEST_MODULE:deserialize_poi(InvalidSerializedPoi0),
+               assert_equal_poi(InvalidPoi0, InvalidPoi),
+               ValidTrees =
+                   aec_trees:set_contracts(
+                     Trees0,
+                     aect_state_tree:insert_contract(
+                       ValidContract, aec_trees:contracts(Trees0))),
+               {ok, ValidPoi} = ?TEST_MODULE:add_poi(
+                                   contracts, ContractId,
+                                   ValidTrees,
+                                   ?TEST_MODULE:new_poi(ValidTrees)),
+               assert_not_equal_poi(ValidPoi, InvalidPoi),
+               ?assertMatch({error, bad_proof},
+                            aec_trees:verify_poi(contracts, ContractId,
+                                                 InvalidContract,
+                                                 InvalidPoi))
        end}
     ].
 
